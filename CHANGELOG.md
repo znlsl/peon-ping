@@ -1,3 +1,8 @@
+## v2.28.1 (2026-05-17)
+
+### Fixed
+- **Windows: `Start-Process -ArgumentList` silently truncated paths containing spaces.** When `%USERPROFILE%` contained a space (common for Microsoft accounts whose display name uses the `Firstname Lastname` form, since Windows uses the verbatim display name in the profile path), every PowerShell spawn that passed a path variable verbatim exited in ~0.4s with `-196608` and stderr `"Processing -File 'C:\Users\Firstname' failed because the file does not exist"`. `Start-Process -ArgumentList @(...)` joins array elements with spaces and does NOT auto-quote elements containing spaces, so the child process received truncated paths. Audio playback, desktop notifications, trainer notifications, and the amp/antigravity/kimi adapter background processes all broke for affected users. The Start-Process calls now wrap each path-bearing element with embedded backtick-escaped quotes before invoking PowerShell. PR #520. Thanks @Matthew-19.
+
 ## v2.28.0 (2026-05-13)
 
 ### Added
