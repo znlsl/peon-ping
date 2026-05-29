@@ -111,6 +111,21 @@ start_relay() {
   [ "$output" = "404" ]
 }
 
+@test "relay /play stays silent when paused (.paused flag set)" {
+  # Regression for #521: `peon pause` writes .paused; the relay daemon must
+  # honor it instead of playing sounds for remote sessions.
+  touch "$TEST_DIR/.paused"
+  HOST_PLATFORM=linux start_relay
+  run "$REAL_CURL" -sf "http://127.0.0.1:$RELAY_PORT/play?file=packs/peon/sounds/Hello1.wav" \
+    -H "X-Volume: 0.7"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"paused"* ]]
+  sleep 0.2
+  # No audio backend should have been invoked while paused.
+  run linux_audio_was_called
+  [ "$status" -ne 0 ]
+}
+
 # ── Path traversal protection ─────────────────────────────────────────────────
 
 @test "relay blocks path traversal with .." {

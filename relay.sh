@@ -192,6 +192,7 @@ PORT = int(sys.argv[4])
 CONFIG_FILE = os.path.join(PEON_DIR, "config.json")
 STATE_FILE = os.path.join(PEON_DIR, ".state.json")
 REMOTE_STATE_FILE = os.path.join(PEON_DIR, ".remote_state.json")
+PAUSED_FILE = os.path.join(PEON_DIR, ".paused")
 
 active_sessions = {}  # session_id → time.time() when UserPromptSubmit received
 SESSION_KEEPALIVE_S = 600  # safety timeout
@@ -471,6 +472,17 @@ class RelayHandler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path != "/play":
             self.send_error(404)
+            return
+
+        # Honor `peon pause`: when the .paused flag is set, the relay daemon
+        # stays silent too (peon.sh writes this file on `peon pause`). Without
+        # this check, remote sessions kept playing sounds after pause (#521).
+        # Acknowledge with 200 so the caller doesn't treat it as an error.
+        if os.path.exists(PAUSED_FILE):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK: paused")
             return
 
         params = urllib.parse.parse_qs(parsed.query)
