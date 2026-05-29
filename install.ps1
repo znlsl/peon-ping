@@ -2499,6 +2499,12 @@ try {
 }
 
 $rawEvent = $event.hook_event_name
+# Defensive fallback: GitHub Copilot CLI's permissionRequest event leaks
+# camelCase fields ("hookName") even when the hook is registered with the
+# PascalCase key that should produce the VS Code-compatible payload. Without
+# this fallback, every Copilot CLI permission popup goes silent. See PR
+# adding native Copilot CLI support for the upstream-bug repro.
+if (-not $rawEvent) { $rawEvent = $event.hookName }
 if (-not $rawEvent) { exit 0 }
 
 # Cursor IDE sends camelCase via Third-party skills; Claude Code sends PascalCase.
@@ -2513,11 +2519,18 @@ $cursorMap = @{
     "subagentStop" = "Stop"
     "subagentStart" = "SubagentStart"
     "preCompact" = "PreCompact"
+    # Copilot CLI camelCase fallbacks (most events normalize via PascalCase
+    # registration; permissionRequest leaks camelCase as of CLI 1.0.48-1).
+    "permissionRequest" = "PermissionRequest"
+    "notification" = "Notification"
+    "agentStop" = "Stop"
+    "userPromptSubmitted" = "UserPromptSubmit"
+    "postToolUseFailure" = "PostToolUseFailure"
 }
 $hookEvent = if ($cursorMap.ContainsKey($rawEvent)) { $cursorMap[$rawEvent] } else { $rawEvent }
 
-# Extract session ID (Claude Code: session_id, Cursor: conversation_id)
-$sessionId = if ($event.session_id) { $event.session_id } elseif ($event.conversation_id) { $event.conversation_id } else { "default" }
+# Extract session ID (Claude Code: session_id, Cursor: conversation_id, Copilot CLI camelCase leak: sessionId)
+$sessionId = if ($event.session_id) { $event.session_id } elseif ($event.conversation_id) { $event.conversation_id } elseif ($event.sessionId) { $event.sessionId } else { "default" }
 
 # Extract cwd from event (used by path_rules for directory-based pack selection)
 $cwd = if ($event.cwd) { $event.cwd } else { "" }
@@ -3672,6 +3685,50 @@ if ((-not $Local) -and (Test-Path $CursorDir)) {
     
     $cursorData | ConvertTo-Json -Depth 10 | Set-Content $CursorHooksFile -Encoding UTF8
     Write-Host "  Cursor beforeSubmitPrompt hook registered" -ForegroundColor Green
+}
+
+# --- Register GitHub Copilot CLI hooks if ~/.copilot exists ---
+# Wires user-level hooks at %USERPROFILE%\.copilot\hooks\peon-ping.json
+# pointing directly at peon.ps1 with PascalCase event names. PascalCase
+# tells the CLI to deliver the VS Code-compatible (snake_case) payload
+# that peon.ps1 reads natively, bypassing the per-repo adapter entirely.
+$CopilotDir = Join-Path $env:USERPROFILE ".copilot"
+$CopilotHooksDir = Join-Path $CopilotDir "hooks"
+$CopilotHooksFile = Join-Path $CopilotHooksDir "peon-ping.json"
+
+if ((-not $Local) -and (Test-Path $CopilotDir)) {
+    Write-Host ""
+    Write-Host "Detected GitHub Copilot CLI installation, registering hooks..."
+
+    $copilotHookCmd = "powershell -NoProfile -NonInteractive -File `"$hookScriptPath`""
+
+    # Build hook entries. Using PascalCase event names so Copilot CLI
+    # delivers the VS Code-compatible payload shape that peon.ps1 reads.
+    # postToolUse is intentionally omitted: peon.ps1 has no PostToolUse
+    # handler and routing through Stop floods the debounce window.
+    $copilotEvents = @(
+        "SessionStart", "SessionEnd", "SubagentStart", "Stop",
+        "Notification", "PermissionRequest", "PreToolUse",
+        "PostToolUseFailure", "PreCompact"
+    )
+    $copilotHooks = [ordered]@{}
+    foreach ($evt in $copilotEvents) {
+        $copilotHooks[$evt] = @(
+            [PSCustomObject]@{
+                type       = "command"
+                powershell = $copilotHookCmd
+                timeoutSec = 10
+            }
+        )
+    }
+    $copilotData = [PSCustomObject]@{
+        version = 1
+        hooks   = [PSCustomObject]$copilotHooks
+    }
+
+    New-Item -ItemType Directory -Path $CopilotHooksDir -Force | Out-Null
+    $copilotData | ConvertTo-Json -Depth 10 | Set-Content $CopilotHooksFile -Encoding UTF8
+    Write-Host "  Copilot CLI hooks registered for: $($copilotEvents -join ', ')" -ForegroundColor Green
 }
 
 # --- Auto-detect deepagents-cli and register hooks ---
