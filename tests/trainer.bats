@@ -232,6 +232,22 @@ json.dump(s, open('$TEST_DIR/.state.json', 'w'))
   [ "$count" = "2" ]
 }
 
+@test "hook event skips trainer reminder when paused (#528)" {
+  bash "$PEON_SH" trainer on
+  touch "$TEST_DIR/.paused"
+  python3 -c "
+import json, time
+s = json.load(open('$TEST_DIR/.state.json'))
+s['trainer'] = {'date': '$(date +%Y-%m-%d)', 'reps': {'pushups': 0, 'squats': 0}, 'last_reminder_ts': int(time.time()) - 3600}
+json.dump(s, open('$TEST_DIR/.state.json', 'w'))
+"
+  run_peon '{"hook_event_name":"Stop","cwd":"/tmp/myproject","session_id":"s1","permission_mode":"default"}'
+  [ "$PEON_EXIT" -eq 0 ]
+  count=$(afplay_call_count)
+  # Pause must silence everything: neither the main sound nor the trainer plays.
+  [ "$count" = "0" ]
+}
+
 @test "hook event skips trainer reminder when interval not elapsed" {
   bash "$PEON_SH" trainer on
   python3 -c "

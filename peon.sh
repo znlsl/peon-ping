@@ -6512,7 +6512,9 @@ else
 fi
 
 # --- Trainer reminder sound (after main sound finishes) ---
-if [ -n "${TRAINER_SOUND:-}" ] && [ -f "$TRAINER_SOUND" ]; then
+# Honor `peon pause` / mute: the trainer is a sound like any other, so it must
+# stay silent when PAUSED is set (mirrors the notification guards below). See #528.
+if [ -n "${TRAINER_SOUND:-}" ] && [ -f "$TRAINER_SOUND" ] && [ "$PAUSED" != "true" ]; then
   if [ "$_PEON_SYNC" = "true" ]; then
     play_sound "$TRAINER_SOUND" "$VOLUME"
     # Speak trainer TTS text after trainer sound when TTS enabled
