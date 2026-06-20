@@ -1284,6 +1284,27 @@ peon mobile pushover <user_key> <app_token>
 peon mobile telegram <bot_token> <chat_id>
 ```
 
+### 通知优先级（ntfy）
+
+默认情况下，peon-ping 会根据事件类型推断 ntfy 优先级（权限请求为 `high`，常规事件为 `default`/`low`）。在 iOS 上，较低的优先级可能会静默送达（横幅显示但不播放声音）。设置一个明确的优先级可让提醒发出声音：
+
+```bash
+peon mobile ntfy my-peon-notifications --priority=max
+```
+
+也可以在 `config.json` 的 `mobile_notify` 中添加 `priority` 键：
+
+```json
+"mobile_notify": {
+  "service": "ntfy",
+  "topic": "my-peon-notifications",
+  "server": "https://ntfy.sh",
+  "priority": "max"
+}
+```
+
+可接受的值为 ntfy 优先级名称（`max`/`urgent`、`high`、`default`、`low`、`min`）或数字 `1` 到 `5`。设置后会应用于每个事件，覆盖按事件类型推断的默认值；保持不设置则维持原有行为。同一个值也会映射到 Pushover 的优先级。
+
 ### 手机命令
 
 ```bash

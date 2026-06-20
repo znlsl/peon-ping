@@ -1405,7 +1405,7 @@ peon mobile telegram <bot_token> <chat_id>
 
 By default peon-ping derives the ntfy priority from the event type (permission
 prompts are `high`, routine events `default`/`low`). On iOS the lower tiers can
-arrive **silently** — the banner shows but no sound plays. Set an explicit
+arrive **silently** (the banner shows but no sound plays). Set an explicit
 priority to make alerts audible:
 
 ```bash
@@ -1424,7 +1424,7 @@ You can also add a `priority` key to `mobile_notify` in `config.json`:
 ```
 
 Accepted values are ntfy priority names (`max`/`urgent`, `high`, `default`,
-`low`, `min`) or numbers `1`–`5`. When set, it applies to every event,
+`low`, `min`) or numbers `1` to `5`. When set, it applies to every event,
 overriding the per-event default; leave it unset to keep the original behavior.
 The same value also maps to Pushover priorities for that service.
 

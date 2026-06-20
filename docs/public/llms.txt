@@ -138,6 +138,7 @@ Independent Controls:
 - enabled: master audio switch (affects sounds only)
 - desktop_notifications: desktop popup banners (affects popups only)
 - mobile_notify.enabled: phone push notifications (affects mobile only)
+- mobile_notify.priority: explicit ntfy/Pushover priority (max/urgent, high, default, low, min, or 1-5); overrides the per-event default and applies to every event. Useful on iOS, where lower tiers can arrive silently.
 
 ## CLI Commands
 
@@ -150,7 +151,7 @@ peon sounds list [pack] / disable <cat> <file> / enable <cat> <file>  (disable o
 peon notifications on / off / test
 peon debug on / off / status
 peon logs [--last N] [--session ID] [--clear]
-peon mobile ntfy <topic>
+peon mobile ntfy <topic> [--server=URL] [--token=TOKEN] [--priority=max|high|default|low|min]
 peon relay --daemon
 peon trainer on / off / log / status / goal
 ```
