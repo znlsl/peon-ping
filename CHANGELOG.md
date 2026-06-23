@@ -1,3 +1,8 @@
+## v2.31.1 (2026-06-22)
+
+### Changed
+- **Default pack set swaps `sc_kerrigan` for `sc_scv`.** The curated default install (5 packs for new users) carried `sc_kerrigan`, whose StarCraft voice lines lean heavily on moaning/claustrophobic clips that aren't a good fit for a default. It's replaced by `sc_scv` (the StarCraft Terran worker — on-theme with the Peon and free of those clips), keeping the curated default at 5 packs. `sc_kerrigan` stays fully available in the registry and fallback catalog for opt-in install via `peon packs install sc_kerrigan`. Affects `install.sh`, `install.ps1`, and the Homebrew `peon-ping-setup` default list.
+
 ## v2.31.0 (2026-06-20)
 
 ### Added
