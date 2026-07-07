@@ -6253,7 +6253,10 @@ if [ "${PEON_EXIT:-true}" = "true" ]; then
   if [ "${TERMINAL_TAB_TITLE:-true}" = "true" ] && [ -n "${PROJECT:-}" ] && [ "${EVENT:-}" != "SessionEnd" ]; then
     _peon_title="${NOTIF_MARKER-${MARKER}}${PROJECT}: ${STATUS:-working}"
     [ "${PEON_TEST:-0}" = "1" ] && printf '%s\n' "$_peon_title" > "$PEON_DIR/.tab_title"
-    { printf '\033]0;%s\007' "$_peon_title" > /dev/tty; } 2>/dev/null || true
+    # Target the pane that owns this hook process, not the focused pane (issue #548).
+    _peon_early_tty="/dev/tty"
+    [ -n "${PEON_ENV_HOOK_TTY:-}" ] && [ -w "/dev/${PEON_ENV_HOOK_TTY}" ] && _peon_early_tty="/dev/${PEON_ENV_HOOK_TTY}"
+    { printf '\033]0;%s\007' "$_peon_title" > "$_peon_early_tty"; } 2>/dev/null || true
   fi
   _cmux_update_status_async
   exit 0
@@ -6392,18 +6395,20 @@ NOTIFY_TITLE="${NOTIFY_PROJECT:-$PROJECT}"
 # Inside tmux, /dev/tty may not be available from hook subprocesses;
 # fall back to the tmux pane's TTY in that case.
 _peon_tty=""
-if [ -n "${TMUX:-}" ]; then
+# Prefer the ancestor-walked session TTY: it identifies the pane that actually
+# owns this hook process. Inside tmux, `display-message` with no -t target
+# returns the *active/focused* pane's TTY, which is wrong when the user has
+# switched focus to another pane while the agent works (issue #548). Fall back
+# to tmux's pane lookup, then to /dev/tty.
+if [ -n "${PEON_ENV_HOOK_TTY:-}" ] && [ -w "/dev/${PEON_ENV_HOOK_TTY}" ]; then
+  _peon_tty="/dev/${PEON_ENV_HOOK_TTY}"
+elif [ -n "${TMUX:-}" ]; then
   _peon_tty=$(tmux display-message -p '#{pane_tty}' 2>/dev/null || true)
 fi
 if [ -z "$_peon_tty" ]; then
   # Claude Code (and other agents) run hook commands without a controlling
   # terminal, so /dev/tty is unavailable and escape writes silently fail.
-  # Fall back to the ancestor-walked session TTY we already resolved.
-  if [ -n "${PEON_ENV_HOOK_TTY:-}" ] && [ -w "/dev/${PEON_ENV_HOOK_TTY}" ]; then
-    _peon_tty="/dev/${PEON_ENV_HOOK_TTY}"
-  else
-    _peon_tty="/dev/tty"
-  fi
+  _peon_tty="/dev/tty"
 fi
 # In test mode the real TTY isn't writable, so redirect escapes to a file the
 # BATS suite can read back to assert on what would (or would not) be emitted.
