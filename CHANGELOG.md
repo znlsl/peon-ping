@@ -1,3 +1,11 @@
+## v2.34.0 (2026-07-07)
+
+### Added
+- **Codex stable hooks auto-register in `~/.codex/config.toml`.** When Codex is detected, the installer now writes a peon-managed stable-hooks block directly into `~/.codex/config.toml` instead of relying only on the legacy `notify` argv callback, mapping the stable Codex events (`PermissionRequest`, `PreCompact`, subagent start/stop, prompts, session start, and stop) to CESP. Noisy per-tool hooks (`PreToolUse`, `PostToolUse`, `PostCompact`) are intentionally left unregistered to avoid chatter. Reinstall and uninstall remove only the block scoped to the current install root (matched by an `install_dir` sentinel plus an adapter-path boundary check), so unrelated Codex config and any sibling peon installs are preserved. Install/uninstall also clean stale peon-ping skill files. Full Windows parity across `install.ps1`, `uninstall.ps1`, and `adapters/codex.ps1`. All mutation is done with Python regex (no `sed`), and coverage was added to `tests/install.bats`, `tests/codex.bats`, `tests/peon.bats`, and `tests/adapters-windows.Tests.ps1`. Documented in `README.md`, `README_zh.md`, `README_ja.md`, `README_ko.md`, and `docs/public/llms.txt`. PR #549, thanks @zenvor.
+
+### Fixed
+- **Tab-title escapes reach the pane that owns the hook, not the focused pane.** Under tmux, both title-write paths in `peon.sh` targeted the wrong pane when the user switched focus while an agent was working: the early-exit path hardcoded `/dev/tty`, and the main path called `tmux display-message -p '#{pane_tty}'` with no `-t` target, which returns the active/focused pane's TTY. The title string then bled into another pane's prompt as literal garbage and repainted the wrong tab. Both paths now prefer `PEON_ENV_HOOK_TTY` (the ancestor-walked TTY of the owning pane), falling back to the tmux lookup and then `/dev/tty`, keeping the existing writability guard. Reported and tested by @gus-at-yelp. Closes #548.
+
 ## v2.33.0 (2026-07-01)
 
 ### Added
