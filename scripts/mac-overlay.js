@@ -129,43 +129,16 @@ function run(argv) {
               return;
             }
 
-            if (clickCommand) {
-              activateBundle(bundleId);
-              runClickCommand(clickCommand);
-              $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);
-              $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
-                0.05, $.NSApp, 'terminate:', null, false
-              );
-              return;
-            }
-
-            // iTerm2: raise the specific window containing our session
-            if (sessionTty && bundleId === 'com.googlecode.iterm2') {
-              var task = $.NSTask.alloc.init;
-              task.setLaunchPath($('/usr/bin/osascript'));
-              task.setArguments($(['-l', 'JavaScript', '-e',
-                'var iTerm=Application("iTerm2");var ws=iTerm.windows();var f=0;' +
-                'for(var w=0;w<ws.length&&!f;w++){var ts=ws[w].tabs();' +
-                'for(var t=0;t<ts.length&&!f;t++){var ss=ts[t].sessions();' +
-                'for(var s=0;s<ss.length&&!f;s++){try{if(ss[s].tty()==="' + sessionTty + '")' +
-                '{ts[t].select();ss[s].select();var wn=ws[w].name();' +
-                'var se=Application("System Events");var sw=se.processes["iTerm2"].windows();' +
-                'for(var i=0;i<sw.length;i++){try{if(sw[i].name()===wn){sw[i].actions["AXRaise"].perform();break}}catch(e2){}}' +
-                'ws[w].index=1;iTerm.activate();f=1}}catch(e){}}}}'
-              ]));
-              task.launch;
-              task.waitUntilExit;
-              // Signal ALL sibling overlays to dismiss (event-driven, no polling!)
-              $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);
-              // Small delay to ensure notification is delivered before we terminate
-              $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
-                0.05, $.NSApp, 'terminate:', null, false
-              );
-              return;
-            }
-            // activateWithOptions() won't cross Spaces from this accessory-policy
-            // process; Warp's deep link does, and also selects the exact tab.
-            // Fall back to AppleScript activate (app + Space, no tab) on older Warp.
+            // non-cmux: activate the terminal app, raise the tab hosting our
+            // session, THEN run any custom focus command (e.g. tmux
+            // select-window/select-pane) last — so tmux switches to the
+            // agent's pane after the correct terminal tab is already up.
+            var activated = false;
+            // Warp: activateWithOptions() won't cross Spaces from this
+            // accessory-policy process; Warp's deep link does, and also selects
+            // the exact tab. Fall back to AppleScript activate (app + Space, no
+            // tab) on older Warp. Don't return, so a custom click command (tmux)
+            // still runs last, same as every other terminal.
             if (bundleId === 'dev.warp.Warp-Stable') {
               var warpTask = $.NSTask.alloc.init;
               if (warpFocusUrl) {
@@ -177,15 +150,9 @@ function run(argv) {
               }
               warpTask.launch;
               warpTask.waitUntilExit;
-              $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);
-              $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
-                0.05, $.NSApp, 'terminate:', null, false
-              );
-              return;
+              activated = true;
             }
-            var activated = false;
-            // Primary: activate by bundle ID
-            if (bundleId) activated = activateBundle(bundleId);
+            if (!activated && bundleId) activated = activateBundle(bundleId);
             // Fallback: activate by IDE PID (for embedded terminals)
             if (!activated && idePid > 0) {
               var ideApp = $.NSRunningApplication.runningApplicationWithProcessIdentifier(idePid);
@@ -193,23 +160,30 @@ function run(argv) {
                 ideApp.activateWithOptions($.NSApplicationActivateIgnoringOtherApps);
               }
             }
-            // iTerm2: try tab/window-level focus after app activation (fire-and-forget)
+            // iTerm2: raise the specific window/tab hosting our session (by tty)
             if (sessionTty && bundleId === 'com.googlecode.iterm2') {
               try {
-                var task = $.NSTask.alloc.init;
-                task.setLaunchPath($('/usr/bin/osascript'));
-                task.setArguments($(['-l', 'JavaScript', '-e',
+                var itask = $.NSTask.alloc.init;
+                itask.setLaunchPath($('/usr/bin/osascript'));
+                itask.setArguments($(['-l', 'JavaScript', '-e',
                   'var iTerm=Application("iTerm2");var ws=iTerm.windows();var f=0;' +
                   'for(var w=0;w<ws.length&&!f;w++){var ts=ws[w].tabs();' +
                   'for(var t=0;t<ts.length&&!f;t++){var ss=ts[t].sessions();' +
                   'for(var s=0;s<ss.length&&!f;s++){try{if(ss[s].tty()==="' + sessionTty + '")' +
-                  '{ts[t].select();ss[s].select();ws[w].index=1;f=1}}catch(e){}}}}'
+                  '{ts[t].select();ss[s].select();var wn=ws[w].name();' +
+                  'var se=Application("System Events");var sw=se.processes["iTerm2"].windows();' +
+                  'for(var i=0;i<sw.length;i++){try{if(sw[i].name()===wn){sw[i].actions["AXRaise"].perform();break}}catch(e2){}}' +
+                  'ws[w].index=1;iTerm.activate();f=1}}catch(e){}}}}'
                 ]));
-                task.launch;
+                itask.launch;
+                itask.waitUntilExit;
               } catch(e) {}
             }
+            // Custom focus command — e.g. `tmux select-window/select-pane` to
+            // jump to the agent's OWN pane, which app/tab focus can't reach.
+            if (clickCommand) runClickCommand(clickCommand);
 
-            // Signal ALL sibling overlays to dismiss
+            // Signal ALL sibling overlays to dismiss (event-driven, no polling)
             $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObject($(dismissNotificationName), $.NSString.string);
             // Small delay to ensure notification is delivered before we terminate
             $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(
@@ -326,12 +300,40 @@ function run(argv) {
       }
     }
 
-    // Message label — vertically centered
-    var font = $.NSFont.boldSystemFontOfSize(16);
-    var textHeight = font.ascender - font.descender + font.leading + 4;
-    var textY = (winHeight - textHeight) / 2;
+    // Message label(s). When a subtitle is supplied (argv[8]), stack the
+    // title on top and the subtitle below; otherwise render a single,
+    // vertically-centered line (original behavior).
+    var hasSubtitle = subtitle && subtitle.length > 0;
+    var titleFont = $.NSFont.boldSystemFontOfSize(16);
+    var titleHeight = titleFont.ascender - titleFont.descender + titleFont.leading + 4;
+
+    var titleY;
+    if (hasSubtitle) {
+      var subFont = $.NSFont.systemFontOfSize(12);
+      var subHeight = subFont.ascender - subFont.descender + subFont.leading + 4;
+      var gap = 2;
+      var blockBottom = (winHeight - (titleHeight + gap + subHeight)) / 2;
+      titleY = blockBottom + subHeight + gap; // title above subtitle
+      var subLabel = $.NSTextField.alloc.initWithFrame(
+        $.NSMakeRect(textX, blockBottom, textWidth, subHeight)
+      );
+      subLabel.setStringValue($(subtitle));
+      subLabel.setBezeled(false);
+      subLabel.setDrawsBackground(false);
+      subLabel.setEditable(false);
+      subLabel.setSelectable(false);
+      subLabel.setTextColor($.NSColor.colorWithSRGBRedGreenBlueAlpha(1, 1, 1, 0.85));
+      subLabel.setAlignment($.NSTextAlignmentCenter);
+      subLabel.setFont(subFont);
+      subLabel.setLineBreakMode($.NSLineBreakByTruncatingTail);
+      subLabel.cell.setWraps(false);
+      contentView.addSubview(subLabel);
+    } else {
+      titleY = (winHeight - titleHeight) / 2;
+    }
+
     var label = $.NSTextField.alloc.initWithFrame(
-      $.NSMakeRect(textX, textY, textWidth, textHeight)
+      $.NSMakeRect(textX, titleY, textWidth, titleHeight)
     );
     label.setStringValue($(message));
     label.setBezeled(false);
@@ -340,7 +342,7 @@ function run(argv) {
     label.setSelectable(false);
     label.setTextColor($.NSColor.whiteColor);
     label.setAlignment($.NSTextAlignmentCenter);
-    label.setFont(font);
+    label.setFont(titleFont);
     label.setLineBreakMode($.NSLineBreakByTruncatingTail);
     label.cell.setWraps(false);
     contentView.addSubview(label);
