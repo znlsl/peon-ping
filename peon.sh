@@ -597,12 +597,36 @@ play_sound() {
           Add-Type -AssemblyName PresentationCore
           \$p = New-Object System.Windows.Media.MediaPlayer
           \$p.Volume = $vol
+          Register-ObjectEvent -InputObject \$p -EventName MediaOpened -SourceIdentifier PeonWslOpened | Out-Null
+          Register-ObjectEvent -InputObject \$p -EventName MediaFailed -SourceIdentifier PeonWslFailed | Out-Null
           \$p.Open([Uri]'$wpath')
-          Start-Sleep -Milliseconds 500
           \$p.Play()
-          while (\$p.Position -lt \$p.NaturalDuration.TimeSpan -and \$p.Position.TotalSeconds -lt 10) {
-            Start-Sleep -Milliseconds 100
+          # Pump the WPF dispatcher so MediaOpened fires and NaturalDuration resolves.
+          # Polling \$p.Position against NaturalDuration broke on Windows builds
+          # where the duration is not yet available right after Open (HasTimeSpan
+          # is False, so TimeSpan reads 00:00:00), which cut playback to ~0ms and
+          # left hook events silent (issue #558).
+          \$deadline = [datetime]::UtcNow.AddSeconds(5)
+          \$opened = \$false
+          while ([datetime]::UtcNow -lt \$deadline) {
+            [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+              [System.Windows.Threading.DispatcherPriority]::Background, [Action]{ }
+            )
+            if (Get-Event -SourceIdentifier PeonWslFailed -ErrorAction SilentlyContinue) { break }
+            if (Get-Event -SourceIdentifier PeonWslOpened -ErrorAction SilentlyContinue) { \$opened = \$true; break }
+            Start-Sleep -Milliseconds 50
           }
+          if (\$opened) {
+            if (\$p.NaturalDuration.HasTimeSpan) {
+              \$secs = [math]::Min(\$p.NaturalDuration.TimeSpan.TotalSeconds, 10)
+              Start-Sleep -Seconds ([math]::Ceiling(\$secs))
+            } else {
+              Start-Sleep -Seconds 3
+            }
+          }
+          Unregister-Event -SourceIdentifier PeonWslOpened -ErrorAction SilentlyContinue
+          Unregister-Event -SourceIdentifier PeonWslFailed -ErrorAction SilentlyContinue
+          \$p.Stop()
           \$p.Close()
         " &>/dev/null &
         save_sound_pid $!
